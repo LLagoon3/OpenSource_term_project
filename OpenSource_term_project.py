@@ -26,13 +26,14 @@ def read_csv():
             tmp_w_minus_a.append(float(pressure_df.loc[i]['air_temp'] - tmp))       
     pressure_df['w_temp'] = tmp_w_temp
     pressure_df['wt_minus_at'] = tmp_w_minus_a
-   
+    ###################
     for i in range(0, pressure_df.shape[0]):
         row = pressure_df.loc[i]
         if row['wt_minus_at'] <= -20:
             print(row['date'].date(), row['wt_minus_at'])
-    
+    ###################
     return pressure_df
+
 
 def crawling(y, m, d):
     response = requests.get("https://www.badatime.com/239-{0}-{1}-{2}.html".format(y, m, d))
@@ -47,7 +48,6 @@ def crawling(y, m, d):
         if text[0][0:1].isdigit():
             day = p.match(text[0]).group()
             date = datetime(int(y), int(m), int(day))
-            
         else:
             if len(text) == 1:
                 date_weather[date] = [text[0], text[0]]
@@ -55,8 +55,19 @@ def crawling(y, m, d):
                 date_weather[date] = text
             else:
                 raise Exception
-            
+    ###################       
     print(date_weather)
-    return date_weather
+    ###################
+    
+    return dic_to_df(date_weather)
 
-crawling('2015', '01', '01')
+
+def dic_to_df(dic):
+    index, data = list(), list()
+    for key, val in dic.items():
+        index.extend([key, key])
+        data.extend([val[0], val[1]])
+    return pd.DataFrame({'date' : index, 'weather' : data})
+
+
+print(crawling('2015', '01', '01'))
