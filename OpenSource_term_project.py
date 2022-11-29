@@ -1,4 +1,8 @@
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
+import re
 
 def read_csv():
     water_temp_df = pd.read_csv('./1411_1501_avg_water_temp_mod.csv', encoding='cp949')
@@ -27,5 +31,32 @@ def read_csv():
         row = pressure_df.loc[i]
         if row['wt_minus_at'] <= -20:
             print(row['date'].date(), row['wt_minus_at'])
+    
+    return pressure_df
 
-read_csv()
+def crawling(y, m, d):
+    response = requests.get("https://www.badatime.com/239-{0}-{1}-{2}.html".format(y, m, d))
+    soup = BeautifulSoup(response.text, 'html.parser')
+    tmp = soup.findAll('td', attrs = {"rowspan":"2"})
+    date_weather = dict()
+    date = None
+    p = re.compile('[0-9]*')
+    for line in tmp:
+        text = line.get_text().split('\n')
+        text = ' '.join(text).split()
+        if text[0][0:1].isdigit():
+            day = p.match(text[0]).group()
+            date = datetime(int(y), int(m), int(day))
+            
+        else:
+            if len(text) == 1:
+                date_weather[date] = [text[0], text[0]]
+            elif len(text) == 2:
+                date_weather[date] = text
+            else:
+                raise Exception
+            
+    print(date_weather)
+    return date_weather
+
+crawling('2015', '01', '01')
