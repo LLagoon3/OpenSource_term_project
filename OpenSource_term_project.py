@@ -4,6 +4,16 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import re
 import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+from sklearn.linear_model import LinearRegression      
+from sklearn.preprocessing import PolynomialFeatures 
+
+from sklearn import preprocessing
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn import metrics 
 
 def read_csv():
     water_temp_df = pd.read_csv('./0201_2201_avg_water_temp.csv', encoding='cp949')
@@ -36,7 +46,7 @@ def read_csv():
     snow_cover_df_mod = pd.DataFrame({'date' : date_, 'snow_cover' : snow_cover_})
     snow_cover_df_mod.set_index('date', drop = True, inplace = True)
 
-    pressure_df = pressure_df[pressure_df['기압(hPa)'] == 850]
+    pressure_df = pressure_df[pressure_df['기압(hPa)'] == 700]
     pressure_df.rename(columns = {'일시(UTC)':'date', '기압(hPa)':'기압', '고도(gpm)':'고도', '기온(°C)':'air_temp'}, inplace=True)
     pressure_df.drop(['지점', '지점명', '기압', '고도'], axis = 1, inplace = True)
     pressure_df['date'] = pd.to_datetime(pressure_df['date'])
@@ -45,8 +55,12 @@ def read_csv():
     res = pd.concat([pressure_df, water_temp_df_mod, snow_cover_df_mod], axis = 1)
     res[['air_temp', 'w_temp']].dropna()
     res['wt_minus_at'] = res['w_temp'] - res['air_temp']
-    print(res)
+    res['snow_cover'] = res['snow_cover'].fillna(-1)
+    
+    res['bool_snow'] = res['snow_cover'].apply(lambda x : False if x == -1 else True)
+
     res = res.dropna()
+    print(res)
     return res
     
 
@@ -98,11 +112,93 @@ def crawling_devweather(y, m):
     for text in tmp:
         tmp_ = text()
         print(tmp_)
-res = read_csv()
+
+
+def poly_reg(data):
+    idx = data[data['snow_cover'] == -1].index
+    data.drop(idx, inplace = True)
+    print(data)
+    x = data[['wt_minus_at']]
+    y = data['snow_cover']
+    
+    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=10) 
+    
+    poly = PolynomialFeatures(degree=2)           
+    X_train_poly=poly.fit_transform(x_train)  
+    
+    pr = LinearRegression()   
+    pr.fit(X_train_poly, y_train)
+
+    # 학습을 마친 모형에 test data를 적용하기 위해 X_test 데이터를 2차항으로 변형
+    X_test_poly = poly.fit_transform(x_test)
+
+    y_hat_test = pr.predict(X_test_poly)
+    y_comp2 = pd.DataFrame({'y':y_test, 'y_hat':y_hat_test})
+    print(y_comp2)
+    
+    fig = plt.figure(figsize=(10, 5))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(x_train, y_train, 'o', label='Train Data')  # 데이터 분포
+    ax.plot(x_test, y_hat_test, 'r+', label='Predicted Value') # 모형이 학습한 회귀선
+    plt.show()
+    plt.close() 
+    
+    '''
+    knn = KNeighborsClassifier(n_neighbors=5)
+    knn.fit(x_train, y_train)   
+    y_hat = knn.predict(x_test)
+
+    print(y_hat[0:10])
+    print(y_test.values[0:10])
+    '''
+
+
+def knn(data):
+    X=data[['wt_minus_at']]  #독립 변수 X
+    y=data['bool_snow']                      #종속 변수 Y
+
+    X = preprocessing.StandardScaler().fit(X).transform(X)
+
+    print(X)
+    print('\n')
+    
+
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=10) 
+    knn = KNeighborsClassifier(n_neighbors=5)
+
+    # train data를 가지고 모형 학습
+    knn.fit(X_train, y_train)   
+
+    # test data를 가지고 y_hat을 예측 (분류) 
+    y_hat = knn.predict(X_test)
+
+    print(y_hat[0:10])
+    print(y_test.values[0:10])
+
+    # 모형 성능 평가 - Confusion Matrix 계산
+    from sklearn import metrics 
+    knn_matrix = metrics.confusion_matrix(y_test, y_hat)  
+    print(knn_matrix)
+
+    # 모형 성능 평가 - 평가지표 계산
+    knn_report = metrics.classification_report(y_test, y_hat)            
+    print(knn_report)
+
+def main():
+    res = read_csv()
+    knn(res)
+    #res.plot(kind='scatter', x = 'wt_minus_at', y = 'snow_cover')
+    
+
+#plt.show()
 #print(crawling_badatime('2014', '12', '01').head(30))
 #crawling_devweather('2014', '12')
 
-res.plot(kind='scatter', x = 'wt_minus_at', y = 'snow_cover', c = 'coral')
+#res.plot(kind='scatter', x = 'wt_minus_at', y = 'snow_cover', c = 'coral')
+#sns.regplot(x = 'wt_minus_at', y = 'snow_cover', data = res)
 #res.plot(kind='line', x = 'wt_minus_at', y = 'snow_cover')
 
-plt.show()
+#plt.show()
+
+main()
