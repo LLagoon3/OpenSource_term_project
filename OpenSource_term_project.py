@@ -15,6 +15,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn import metrics 
 
+
 def read_csv():
     water_temp_df = pd.read_csv('./0201_2201_avg_water_temp.csv', encoding='cp949')
     snow_cover_df = pd.read_csv('./0201_2201_snow_time.csv', encoding='cp949') 
@@ -57,11 +58,9 @@ def read_csv():
     pressure_df.set_index('date', drop = True, inplace = True)
     
     res = pd.concat([pressure_df, water_temp_df_mod, snow_cover_df_mod], axis = 1)
-    #res[['air_temp', 'w_temp']].dropna()
     res['wt_minus_at'] = res['w_temp'] - res['air_temp_700']
     res['snow_cover'] = res['snow_cover'].fillna(-1)
     res['bool_snow'] = res['snow_cover'].apply(lambda x : False if x == -1 else True)
-
     res = res.dropna()
     print("\n\n\n\n-------------------------DataFrame-------------------------\n\n\n", res)
     return res
@@ -118,7 +117,6 @@ def mod_df(df):
     ax.set_ylabel('Snow')
     plt.show()
     plt.close() 
-    
 
     print("\n\n\n\n-------------------------GroupBy Method-------------------------\n\n")
     grouped = df.groupby(['bool_snow'])
@@ -148,7 +146,6 @@ def mod_df(df):
     df_false = grouped.get_group(False).sample(n = size[1])
     res = pd.merge(df_false, grouped.get_group(True), how = 'outer')
     return res
-
 
 
 def crawling_devweather(y, m):
@@ -211,17 +208,7 @@ def main():
     df = mod_df(df)
     knn(df)
     
-    #res.plot(kind='scatter', x = 'wt_minus_at', y = 'snow_cover')
-    
+    print("\n\n\n\n-------------------------Crawling Example-------------------------\n\n\n", crawling_badatime(2022, 1, 1))
 
-#plt.show()
-#print(crawling_badatime('2014', '12', '01').head(30))
-#crawling_devweather('2014', '12')
-
-#res.plot(kind='scatter', x = 'wt_minus_at', y = 'snow_cover', c = 'coral')
-#sns.regplot(x = 'wt_minus_at', y = 'snow_cover', data = res)
-#res.plot(kind='line', x = 'wt_minus_at', y = 'snow_cover')
-
-#plt.show()
 
 main()
