@@ -46,21 +46,24 @@ def read_csv():
     snow_cover_df_mod = pd.DataFrame({'date' : date_, 'snow_cover' : snow_cover_})
     snow_cover_df_mod.set_index('date', drop = True, inplace = True)
 
-    pressure_df = pressure_df[pressure_df['기압(hPa)'] == 700]
-    pressure_df.rename(columns = {'일시(UTC)':'date', '기압(hPa)':'기압', '고도(gpm)':'고도', '기온(°C)':'air_temp'}, inplace=True)
-    pressure_df.drop(['지점', '지점명', '기압', '고도'], axis = 1, inplace = True)
+    pressure_df_700 = pressure_df[pressure_df['기압(hPa)'] == 700]
+    pressure_df_850 = pressure_df[pressure_df['기압(hPa)'] == 850]
+    pressure_df_700.rename(columns = {'일시(UTC)':'date', '기압(hPa)':'기압', '고도(gpm)':'고도', '기온(°C)':'air_temp_700'}, inplace=True)
+    pressure_df_700.drop(['지점', '지점명', '기압', '고도'], axis = 1, inplace = True)
+    pressure_df_850.rename(columns = {'일시(UTC)':'date', '기압(hPa)':'기압', '고도(gpm)':'고도', '기온(°C)':'air_temp_850'}, inplace=True)
+    pressure_df_850.drop(['지점', '지점명', '기압', '고도'], axis = 1, inplace = True) 
+    pressure_df = pd.merge(pressure_df_700, pressure_df_850, how = 'inner', on = 'date')
     pressure_df['date'] = pd.to_datetime(pressure_df['date'])
     pressure_df.set_index('date', drop = True, inplace = True)
     
     res = pd.concat([pressure_df, water_temp_df_mod, snow_cover_df_mod], axis = 1)
-    res[['air_temp', 'w_temp']].dropna()
-    res['wt_minus_at'] = res['w_temp'] - res['air_temp']
+    #res[['air_temp', 'w_temp']].dropna()
+    res['wt_minus_at'] = res['w_temp'] - res['air_temp_700']
     res['snow_cover'] = res['snow_cover'].fillna(-1)
-    
     res['bool_snow'] = res['snow_cover'].apply(lambda x : False if x == -1 else True)
 
     res = res.dropna()
-    print(res)
+    print("\n\n\n\n-------------------------DataFrame-------------------------\n\n\n", res)
     return res
     
 
@@ -104,6 +107,50 @@ def dic_to_df(dic):
     return res
 
 
+def mod_df(df):
+    df['wt_minus_at_850'] = df['w_temp'] - df['air_temp_850'] 
+    
+    fig = plt.figure(figsize=(10, 5))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(df['wt_minus_at'], df['snow_cover'], 'o', label='700hPa')
+    ax.plot(df['wt_minus_at_850'], df['snow_cover'], 'r+', label='850hPa')
+    ax.set_xlabel('ASTD')
+    ax.set_ylabel('Snow')
+    plt.show()
+    plt.close() 
+    
+
+    print("\n\n\n\n-------------------------GroupBy Method-------------------------\n\n")
+    grouped = df.groupby(['bool_snow'])
+    
+    size = grouped.size()
+    avg_700 = grouped.wt_minus_at.mean()
+    avg_850 = grouped.wt_minus_at_850.mean()
+    std_700 = grouped.wt_minus_at.std()
+    std_850 = grouped.wt_minus_at_850.std()
+
+    avg = std = pd.concat([avg_700, avg_850], axis = 1)
+    std = pd.concat([std_700, std_850], axis = 1)
+    print("\nsize : ", size)
+    print("\nAvg : ", avg)
+    print("\nStd : ", std)
+
+    plt.figure(figsize = (10, 5))
+    w = 0.15
+    idx = np.array([0, 0.5])
+    b1 = plt.bar(idx - 0.5*w, std.wt_minus_at, width  = w, color='red', label='700hPa')
+    b2 = plt.bar(idx + 0.5*w, std.wt_minus_at_850, width  = w, color='green', label='850hPa')
+    plt.xticks(idx, ["False", "True"])
+    plt.ylabel('ASTD Std', size = 13)
+    plt.legend()
+    plt.show()
+
+    df_false = grouped.get_group(False).sample(n = size[1])
+    res = pd.merge(df_false, grouped.get_group(True), how = 'outer')
+    return res
+
+
+
 def crawling_devweather(y, m):
     response = requests.get("https://www.weather.go.kr/w/obs-climate/land/past-obs/obs-by-day.do?stn=102&yy={0}&mm={1}&obs=9".format(y, m))
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -120,7 +167,6 @@ def poly_reg(data):
     print(data)
     x = data[['wt_minus_at']]
     y = data['snow_cover']
-    
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=10) 
     
     poly = PolynomialFeatures(degree=2)           
@@ -128,8 +174,6 @@ def poly_reg(data):
     
     pr = LinearRegression()   
     pr.fit(X_train_poly, y_train)
-
-    # 학습을 마친 모형에 test data를 적용하기 위해 X_test 데이터를 2차항으로 변형
     X_test_poly = poly.fit_transform(x_test)
 
     y_hat_test = pr.predict(X_test_poly)
@@ -138,56 +182,35 @@ def poly_reg(data):
     
     fig = plt.figure(figsize=(10, 5))
     ax = fig.add_subplot(1, 1, 1)
-    ax.plot(x_train, y_train, 'o', label='Train Data')  # 데이터 분포
-    ax.plot(x_test, y_hat_test, 'r+', label='Predicted Value') # 모형이 학습한 회귀선
+    ax.plot(x_train, y_train, 'o', label='Train Data')
+    ax.plot(x_test, y_hat_test, 'r+', label='Predicted Value')
     plt.show()
     plt.close() 
     
-    '''
-    knn = KNeighborsClassifier(n_neighbors=5)
-    knn.fit(x_train, y_train)   
-    y_hat = knn.predict(x_test)
-
-    print(y_hat[0:10])
-    print(y_test.values[0:10])
-    '''
-
 
 def knn(data):
-    X=data[['wt_minus_at']]  #독립 변수 X
-    y=data['bool_snow']                      #종속 변수 Y
+    X=data[['wt_minus_at', 'air_temp_700', 'air_temp_850']]
+    y=data['bool_snow']
 
     X = preprocessing.StandardScaler().fit(X).transform(X)
-
-    print(X)
-    print('\n')
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=10)
+    
+    knn = KNeighborsClassifier(n_neighbors=7)
+    knn.fit(X_train, y_train) 
+    
+    y_hat = knn.predict(X_test)
+    print("\n\n\n\n-------------------------KNN Report-------------------------\n\n")
+    knn_matrix = metrics.confusion_matrix(y_test, y_hat)  
+    print("Confusion Matrix\n", knn_matrix)
+    knn_report = metrics.classification_report(y_test, y_hat)            
+    print("\n", knn_report)
     
 
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=10) 
-    knn = KNeighborsClassifier(n_neighbors=5)
-
-    # train data를 가지고 모형 학습
-    knn.fit(X_train, y_train)   
-
-    # test data를 가지고 y_hat을 예측 (분류) 
-    y_hat = knn.predict(X_test)
-
-    print(y_hat[0:10])
-    print(y_test.values[0:10])
-
-    # 모형 성능 평가 - Confusion Matrix 계산
-    from sklearn import metrics 
-    knn_matrix = metrics.confusion_matrix(y_test, y_hat)  
-    print(knn_matrix)
-
-    # 모형 성능 평가 - 평가지표 계산
-    knn_report = metrics.classification_report(y_test, y_hat)            
-    print(knn_report)
-
 def main():
-    res = read_csv()
-    knn(res)
+    df = read_csv()
+    df = mod_df(df)
+    knn(df)
+    
     #res.plot(kind='scatter', x = 'wt_minus_at', y = 'snow_cover')
     
 
